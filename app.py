@@ -90,7 +90,7 @@ def call_gemini_api(prompt):
     if not GEMINI_API_KEY:
         raise Exception("AI service not configured")
     
-    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
     
     payload = {
         "contents": [{
