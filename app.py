@@ -75,17 +75,23 @@ else:
 # Get free API key from: https://makersuite.google.com/app/apikey
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
 if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-    # Optimize for speed: lower temperature, max tokens limit
-    generation_config = genai.GenerationConfig(
-        temperature=0.7,  # Lower = faster, more consistent
-        top_p=0.9,
-        top_k=40,
-        max_output_tokens=500,  # Limit for faster responses
-    )
-    model = genai.GenerativeModel('gemini-2.5-flash', generation_config=generation_config)
+    try:
+        genai.configure(api_key=GEMINI_API_KEY)
+        # Optimize for speed: lower temperature, max tokens limit
+        generation_config = genai.GenerationConfig(
+            temperature=0.7,  # Lower = faster, more consistent
+            top_p=0.9,
+            top_k=40,
+            max_output_tokens=500,  # Limit for faster responses
+        )
+        # Use gemini-1.5-flash (faster) or gemini-1.5-pro (more capable)
+        model = genai.GenerativeModel('gemini-1.5-flash', generation_config=generation_config)
+        logger.info("✅ Gemini AI initialized successfully")
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize Gemini AI: {str(e)}")
+        model = None
 else:
-    print("WARNING: GEMINI_API_KEY not set. AI features will not work.")
+    logger.warning("⚠️  GEMINI_API_KEY not set. AI features will not work.")
     model = None
 
 # Directory to store generated PDFs
