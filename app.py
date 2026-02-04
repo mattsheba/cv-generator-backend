@@ -90,7 +90,7 @@ def call_gemini_api(prompt):
     if not GEMINI_API_KEY:
         raise Exception("AI service not configured")
     
-    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
     
     payload = {
         "contents": [{
@@ -104,11 +104,24 @@ def call_gemini_api(prompt):
         }
     }
     
-    response = http_requests.post(url, json=payload, timeout=30)
-    response.raise_for_status()
-    
-    result = response.json()
-    return result['candidates'][0]['content']['parts'][0]['text']
+    try:
+        logger.info("🤖 Calling Gemini API...")
+        response = http_requests.post(url, json=payload, timeout=30)
+        response.raise_for_status()
+        
+        result = response.json()
+        text = result['candidates'][0]['content']['parts'][0]['text']
+        logger.info(f"✅ Gemini API response received ({len(text)} chars)")
+        return text
+    except http_requests.exceptions.Timeout:
+        logger.error("❌ Gemini API timeout after 30 seconds")
+        raise Exception("AI service timeout - please try again")
+    except http_requests.exceptions.RequestException as e:
+        logger.error(f"❌ Gemini API request failed: {str(e)}")
+        raise Exception(f"AI service error: {str(e)}")
+    except (KeyError, IndexError) as e:
+        logger.error(f"❌ Unexpected Gemini API response format: {str(e)}")
+        raise Exception("Unexpected AI response format")
 
 # Directory to store generated PDFs
 PDF_DIR = 'generated_cvs'
