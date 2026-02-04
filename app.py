@@ -17,8 +17,8 @@ import html
 from datetime import datetime, timedelta
 import sqlite3
 from contextlib import contextmanager
-import google.generativeai as genai
 from dotenv import load_dotenv
+import requests as http_requests
 
 # Load environment variables
 load_dotenv()
@@ -75,24 +75,34 @@ else:
 # Get free API key from: https://makersuite.google.com/app/apikey
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
 if GEMINI_API_KEY:
-    try:
-        genai.configure(api_key=GEMINI_API_KEY)
-        # Optimize for speed: lower temperature, max tokens limit
-        generation_config = genai.GenerationConfig(
-            temperature=0.7,  # Lower = faster, more consistent
-            top_p=0.9,
-            top_k=40,
-            max_output_tokens=500,  # Limit for faster responses
-        )
-        # Use gemini-1.5-flash (faster) or gemini-1.5-pro (more capable)
-        model = genai.GenerativeModel('gemini-1.5-flash', generation_config=generation_config)
-        logger.info("✅ Gemini AI initialized successfully")
-    except Exception as e:
-        logger.error(f"❌ Failed to initialize Gemini AI: {str(e)}")
-        model = None
+    logger.info("✅ Gemini AI key configured (using REST API)")
 else:
     logger.warning("⚠️  GEMINI_API_KEY not set. AI features will not work.")
-    model = None
+
+def call_gemini_api(prompt):
+    """Call Gemini API using REST instead of deprecated SDK"""
+    if not GEMINI_API_KEY:
+        raise Exception("AI service not configured")
+    
+    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    
+    payload = {
+        "contents": [{
+            "parts": [{"text": prompt}]
+        }],
+        "generationConfig": {
+            "temperature": 0.7,
+            "topP": 0.9,
+            "topK": 40,
+            "maxOutputTokens": 500
+        }
+    }
+    
+    response = http_requests.post(url, json=payload, timeout=30)
+    response.raise_for_status()
+    
+    result = response.json()
+    return result['candidates'][0]['content']['parts'][0]['text']
 
 # Directory to store generated PDFs
 PDF_DIR = 'generated_cvs'
@@ -751,7 +761,7 @@ def health_check():
 def suggest_summary():
     """Generate professional summary using AI"""
     try:
-        if not model:
+        if not GEMINI_API_KEY:
             return jsonify({'error': 'AI service not configured'}), 503
             
         data = request.json
@@ -795,9 +805,8 @@ Requirements:
 
 Return ONLY the summary text, no additional formatting or labels."""
 
-        # Generate response
-        response = model.generate_content(prompt)
-        summary = response.text.strip()
+        # Generate response using REST API
+        summary = call_gemini_api(prompt).strip()
         
         # Cache the response with size limit
         add_to_cache(ai_cache, cache_key, summary)
@@ -813,7 +822,7 @@ Return ONLY the summary text, no additional formatting or labels."""
 def suggest_skills():
     """Generate skills suggestions using AI"""
     try:
-        if not model:
+        if not GEMINI_API_KEY:
             return jsonify({'error': 'AI service not configured'}), 503
             
         data = request.json
@@ -856,9 +865,8 @@ Example format:
 
 Return ONLY the JSON array, no markdown formatting or additional text."""
 
-        # Generate response
-        response = model.generate_content(prompt)
-        skills_text = response.text.strip()
+        # Generate response using REST API
+        skills_text = call_gemini_api(prompt).strip()
         
         # Clean up markdown if present
         if skills_text.startswith('```json'):
@@ -886,7 +894,7 @@ Return ONLY the JSON array, no markdown formatting or additional text."""
 def enhance_description():
     """Enhance job experience description using AI"""
     try:
-        if not model:
+        if not GEMINI_API_KEY:
             return jsonify({'error': 'AI service not configured'}), 503
             
         data = request.json
@@ -916,9 +924,8 @@ Requirements:
 
 Return ONLY the enhanced description as plain text with bullet points, no additional formatting."""
 
-        # Generate response
-        response = model.generate_content(prompt)
-        enhanced = response.text.strip()
+        # Generate response using REST API
+        enhanced = call_gemini_api(prompt).strip()
         logger.info(f"Enhanced description for: {position}")
         
         return jsonify({'description': enhanced})
@@ -931,7 +938,7 @@ Return ONLY the enhanced description as plain text with bullet points, no additi
 def suggest_responsibilities():
     """Generate high-impact responsibility bullets using AI"""
     try:
-        if not model:
+        if not GEMINI_API_KEY:
             return jsonify({'error': 'AI service not configured'}), 503
             
         data = request.json
@@ -982,9 +989,8 @@ Return as JSON array of strings:
 
 Return ONLY the JSON array, no markdown formatting or additional text."""
 
-        # Generate response
-        response = model.generate_content(prompt)
-        resp_text = response.text.strip()
+        # Generate response using REST API
+        resp_text = call_gemini_api(prompt).strip()
         
         # Clean up markdown if present
         if resp_text.startswith('```json'):
