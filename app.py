@@ -62,12 +62,18 @@ jwt = JWTManager(app)
 # API Base URL for production (used in PDF download URLs)
 API_BASE_URL = os.getenv('API_BASE_URL', 'http://localhost:5000')
 
-# Payment Gateway Configuration
+# Lenco Payment Gateway Configuration
+LENCO_SECRET_KEY = os.getenv('LENCO_SECRET_KEY', '')
+LENCO_API_URL = 'https://api.lenco.co/access/v2'
+
+# Legacy Payment Gateway Configuration (Tumeny - deprecated)
 PAYMENT_GATEWAY_URL = os.getenv('PAYMENT_GATEWAY_URL', '')
 PAYMENT_GATEWAY_ENABLED = os.getenv('PAYMENT_GATEWAY_ENABLED', 'false').lower() == 'true'
 
-if PAYMENT_GATEWAY_ENABLED:
-    logger.info(f"💳 Real payment gateway enabled: {PAYMENT_GATEWAY_URL}")
+if LENCO_SECRET_KEY:
+    logger.info("💳 Lenco payment gateway configured (instant mobile money)")
+elif PAYMENT_GATEWAY_ENABLED:
+    logger.info(f"💳 Legacy payment gateway enabled: {PAYMENT_GATEWAY_URL}")
 else:
     logger.info("💰 Running in payment simulation mode")
 
@@ -710,6 +716,161 @@ def check_payment_status(transaction_id):
     except Exception as e:
         logger.error(f"Error checking payment status: {str(e)}")
         return jsonify({'error': 'Internal server error'}), 500
+
+@app.route('/api/payment/verify/<reference>', methods=['GET'])
+def verify_lenco_payment(reference):
+    """Verify Lenco payment and generate CV"""
+    try:
+        if not LENCO_SECRET_KEY:
+            return jsonify({'error': 'Payment system not configured'}), 503
+        
+        # Validate reference format
+        if not reference or not reference.startswith('CV-'):
+            return jsonify({'error': 'Invalid payment reference'}), 400
+        
+        # Call Lenco API to verify payment
+        lenco_url = f"{LENCO_API_URL}/collections/status/{reference}"
+        headers = {
+            'Authorization': f'Bearer {LENCO_SECRET_KEY}',
+            'Content-Type': 'application/json'
+        }
+        
+        response = http_requests.get(lenco_url, headers=headers, timeout=10)
+        
+        if response.status_code != 200:
+            logger.error(f"Lenco API error: {response.status_code} - {response.text}")
+            return jsonify({'error': 'Payment verification failed'}), 500
+        
+        payment_data = response.json()
+        
+        if not payment_data.get('status'):
+            return jsonify({'error': 'Invalid response from payment gateway'}), 500
+        
+        collection = payment_data.get('data', {})
+        payment_status = collection.get('status', '').lower()
+        amount = float(collection.get('amount', 0))
+        
+        # Check if payment was successful
+        if payment_status != 'successful':
+            return jsonify({
+                'success': False,
+                'status': payment_status,
+                'message': 'Payment not completed'
+            })
+        
+        # Verify amount is at least K50
+        if amount < 50:
+            logger.warning(f"Insufficient payment: {reference} - Amount: {amount}")
+            return jsonify({'error': 'Insufficient payment amount'}), 400
+        
+        # Get CV data from session storage (frontend sends it)
+        # In this flow, we need to store CV data when payment is initiated
+        # For now, check database or use callback
+        
+        # Check if already processed
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                'SELECT status, pdf_filename, cv_data FROM transactions WHERE transaction_id = ?',
+                (reference,)
+            )
+            existing = cursor.fetchone()
+        
+        if existing:
+            if existing['status'] == 'completed' and existing['pdf_filename']:
+                # Already processed
+                pdf_url = f"{API_BASE_URL}/api/download-cv/{reference}"
+                return jsonify({
+                    'success': True,
+                    'status': 'successful',
+                    'pdfUrl': pdf_url,
+                    'message': 'CV ready for download'
+                })
+        else:
+            # New payment - need CV data from frontend callback
+            # Store payment record for webhook processing
+            phone = collection.get('mobileMoneyDetails', {}).get('phone', '')
+            
+            with get_db() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT OR REPLACE INTO transactions 
+                    (transaction_id, phone_number, payment_method, amount, status, created_at)
+                    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ''', (reference, phone, 'mobile-money', amount, 'pending_cv_data'))
+            
+            return jsonify({
+                'success': True,
+                'status': 'pending_cv_data',
+                'message': 'Payment verified, waiting for CV data'
+            })
+        
+    except http_requests.exceptions.RequestException as e:
+        logger.error(f"Lenco API request failed: {str(e)}")
+        return jsonify({'error': 'Payment gateway unreachable'}), 503
+    except Exception as e:
+        logger.error(f"Payment verification error: {str(e)}")
+        return jsonify({'error': 'Verification failed'}), 500
+
+@app.route('/api/payment/generate-cv', methods=['POST'])
+def generate_cv_after_payment():
+    """Generate CV after payment verification"""
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        reference = data.get('reference')
+        cv_data = data.get('cvData')
+        
+        if not reference or not cv_data:
+            return jsonify({'error': 'Missing required data'}), 400
+        
+        # Verify payment exists and is paid
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                'SELECT status, amount FROM transactions WHERE transaction_id = ?',
+                (reference,)
+            )
+            payment = cursor.fetchone()
+        
+        if not payment:
+            return jsonify({'error': 'Payment not found'}), 404
+        
+        if payment['status'] not in ['pending_cv_data', 'completed']:
+            return jsonify({'error': 'Payment not verified'}), 403
+        
+        if payment['amount'] < 50:
+            return jsonify({'error': 'Insufficient payment'}), 403
+        
+        # Generate PDF
+        full_name = cv_data.get('personalInfo', {}).get('fullName', 'CV')
+        safe_name = re.sub(r'[^a-zA-Z0-9_]', '_', full_name)
+        filename = f"CV_{safe_name}_{reference[:15]}.pdf"
+        
+        pdf_path = generate_pdf(cv_data, filename)
+        
+        # Update database
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE transactions 
+                SET status = ?, pdf_filename = ?, cv_data = ?, completed_at = CURRENT_TIMESTAMP
+                WHERE transaction_id = ?
+            ''', ('completed', filename, json.dumps(cv_data), reference))
+        
+        pdf_url = f"{API_BASE_URL}/api/download-cv/{reference}"
+        logger.info(f"CV generated for payment: {reference}")
+        
+        return jsonify({
+            'success': True,
+            'pdfUrl': pdf_url,
+            'message': 'CV generated successfully'
+        })
+    except Exception as e:
+        logger.error(f"CV generation error: {str(e)}")
+        return jsonify({'error': 'CV generation failed'}), 500
 
 @app.route('/api/download-cv/<transaction_id>', methods=['GET'])
 def download_cv(transaction_id):
