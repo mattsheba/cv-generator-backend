@@ -937,7 +937,7 @@ def health_check():
 def suggest_summary():
     """Generate professional summary using AI"""
     try:
-        if not GEMINI_API_KEY:
+        if not ANTHROPIC_API_KEY:
             return jsonify({'error': 'AI service not configured'}), 503
             
         data = request.json
@@ -998,7 +998,7 @@ Return ONLY the summary text, no additional formatting or labels."""
 def suggest_skills():
     """Generate skills suggestions using AI"""
     try:
-        if not GEMINI_API_KEY:
+        if not ANTHROPIC_API_KEY:
             return jsonify({'error': 'AI service not configured'}), 503
             
         data = request.json
@@ -1070,7 +1070,7 @@ Return ONLY the JSON array, no markdown formatting or additional text."""
 def enhance_description():
     """Enhance job experience description using AI"""
     try:
-        if not GEMINI_API_KEY:
+        if not ANTHROPIC_API_KEY:
             return jsonify({'error': 'AI service not configured'}), 503
             
         data = request.json
@@ -1114,7 +1114,7 @@ Return ONLY the enhanced description as plain text with bullet points, no additi
 def suggest_responsibilities():
     """Generate high-impact responsibility bullets using AI"""
     try:
-        if not GEMINI_API_KEY:
+        if not ANTHROPIC_API_KEY:
             return jsonify({'error': 'AI service not configured'}), 503
             
         data = request.json
