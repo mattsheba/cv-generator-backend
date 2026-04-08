@@ -8,15 +8,6 @@ cryptography==46.0.4
 Flask==3.1.2
 flask-cors==6.0.2
 Flask-JWT-Extended==4.7.1
-google-ai-generativelanguage==0.6.15
-google-api-core==2.29.0
-google-api-python-client==2.188.0
-google-auth==2.49.0.dev0
-google-auth-httplib2==0.3.0
-google-generativeai==0.8.6
-googleapis-common-protos==1.72.0
-grpcio==1.76.0
-grpcio-status==1.71.2
 gunicorn==25.0.1
 httplib2==0.31.2
 idna==3.11
@@ -25,11 +16,6 @@ Jinja2==3.1.6
 MarkupSafe==3.0.3
 packaging==26.0
 pillow==12.1.0
-proto-plus==1.27.1
-protobuf==5.29.5
-pyasn1==0.6.2
-pyasn1_modules==0.4.2
-pycparser==3.0
 pydantic==2.12.5
 pydantic_core==2.41.5
 PyJWT==2.11.0
@@ -40,6 +26,5 @@ requests==2.32.5
 tqdm==4.67.2
 typing-inspection==0.4.2
 typing_extensions==4.15.0
-uritemplate==4.2.0
 urllib3==2.6.3
 Werkzeug==3.1.5
