@@ -77,53 +77,38 @@ elif PAYMENT_GATEWAY_ENABLED:
 else:
     logger.info("💰 Running in payment simulation mode")
 
-# Configure Claude AI (Anthropic)
-# Get API key from: https://console.anthropic.com/
-ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', '')
-if ANTHROPIC_API_KEY:
-    logger.info("✅ Claude AI key configured (using REST API)")
+# Configure Gemini AI
+# Get free API key from: https://makersuite.google.com/app/apikey
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
+if GEMINI_API_KEY:
+    logger.info("✅ Gemini AI key configured (using REST API)")
 else:
-    logger.warning("⚠️  ANTHROPIC_API_KEY not set. AI features will not work.")
+    logger.warning("⚠️  GEMINI_API_KEY not set. AI features will not work.")
 
-CLAUDE_MODEL = os.getenv('CLAUDE_MODEL', 'claude-3-5-haiku-20241022')
-
-def call_claude_api(prompt):
-    """Call Claude API (Anthropic Messages API)"""
-    if not ANTHROPIC_API_KEY:
+def call_gemini_api(prompt):
+    """Call Gemini API using REST instead of deprecated SDK"""
+    if not GEMINI_API_KEY:
         raise Exception("AI service not configured")
     
-    url = "https://api.anthropic.com/v1/messages"
-    
-    headers = {
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json"
-    }
+    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
     
     payload = {
-        "model": CLAUDE_MODEL,
-        "max_tokens": 2048,
-        "messages": [{"role": "user", "content": prompt}]
+        "contents": [{
+            "parts": [{"text": prompt}]
+        }],
+        "generationConfig": {
+            "temperature": 0.7,
+            "topP": 0.9,
+            "topK": 40,
+            "maxOutputTokens": 2048
+        }
     }
     
-    try:
-        logger.info("🤖 Calling Claude API...")
-        response = http_requests.post(url, headers=headers, json=payload, timeout=30)
-        response.raise_for_status()
-        
-        result = response.json()
-        text = result['content'][0]['text']
-        logger.info(f"✅ Claude API response received ({len(text)} chars)")
-        return text
-    except http_requests.exceptions.Timeout:
-        logger.error("❌ Claude API timeout after 30 seconds")
-        raise Exception("AI service timeout - please try again")
-    except http_requests.exceptions.RequestException as e:
-        logger.error(f"❌ Claude API request failed: {str(e)}")
-        raise Exception(f"AI service error: {str(e)}")
-    except (KeyError, IndexError) as e:
-        logger.error(f"❌ Unexpected Claude API response format: {str(e)}")
-        raise Exception("Unexpected AI response format")
+    response = http_requests.post(url, json=payload, timeout=30)
+    response.raise_for_status()
+    
+    result = response.json()
+    return result['candidates'][0]['content']['parts'][0]['text']
 
 # Directory to store generated PDFs
 PDF_DIR = 'generated_cvs'
@@ -937,7 +922,7 @@ def health_check():
 def suggest_summary():
     """Generate professional summary using AI"""
     try:
-        if not ANTHROPIC_API_KEY:
+        if not GEMINI_API_KEY:
             return jsonify({'error': 'AI service not configured'}), 503
             
         data = request.json
@@ -982,7 +967,7 @@ Requirements:
 Return ONLY the summary text, no additional formatting or labels."""
 
         # Generate response using REST API
-        summary = call_claude_api(prompt).strip()
+        summary = call_gemini_api(prompt).strip()
         
         # Cache the response with size limit
         add_to_cache(ai_cache, cache_key, summary)
@@ -998,7 +983,7 @@ Return ONLY the summary text, no additional formatting or labels."""
 def suggest_skills():
     """Generate skills suggestions using AI"""
     try:
-        if not ANTHROPIC_API_KEY:
+        if not GEMINI_API_KEY:
             return jsonify({'error': 'AI service not configured'}), 503
             
         data = request.json
@@ -1042,7 +1027,7 @@ Example format:
 Return ONLY the JSON array, no markdown formatting or additional text."""
 
         # Generate response using REST API
-        skills_text = call_claude_api(prompt).strip()
+        skills_text = call_gemini_api(prompt).strip()
         
         # Clean up markdown if present
         if skills_text.startswith('```json'):
@@ -1070,7 +1055,7 @@ Return ONLY the JSON array, no markdown formatting or additional text."""
 def enhance_description():
     """Enhance job experience description using AI"""
     try:
-        if not ANTHROPIC_API_KEY:
+        if not GEMINI_API_KEY:
             return jsonify({'error': 'AI service not configured'}), 503
             
         data = request.json
@@ -1101,7 +1086,7 @@ Requirements:
 Return ONLY the enhanced description as plain text with bullet points, no additional formatting."""
 
         # Generate response using REST API
-        enhanced = call_claude_api(prompt).strip()
+        enhanced = call_gemini_api(prompt).strip()
         logger.info(f"Enhanced description for: {position}")
         
         return jsonify({'description': enhanced})
@@ -1114,7 +1099,7 @@ Return ONLY the enhanced description as plain text with bullet points, no additi
 def suggest_responsibilities():
     """Generate high-impact responsibility bullets using AI"""
     try:
-        if not ANTHROPIC_API_KEY:
+        if not GEMINI_API_KEY:
             return jsonify({'error': 'AI service not configured'}), 503
             
         data = request.json
@@ -1166,7 +1151,7 @@ Return as JSON array of strings:
 Return ONLY the JSON array, no markdown formatting or additional text."""
 
         # Generate response using REST API
-        resp_text = call_claude_api(prompt).strip()
+        resp_text = call_gemini_api(prompt).strip()
         
         # Clean up markdown if present
         if resp_text.startswith('```json'):
